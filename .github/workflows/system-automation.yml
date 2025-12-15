@@ -1,15 +1,20 @@
 name: System Automation Demo
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # Ejecución manual
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
 
 jobs:
   system-automation:
     name: System automation on ${{ matrix.os }}
+    
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
-
+    
     runs-on: ${{ matrix.os }}
 
     env:
@@ -17,19 +22,62 @@ jobs:
       SECRET_EXAMPLE: ${{ secrets.SECRET_EXAMPLE }}
 
     steps:
+      # 1. Checkout del repositorio
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Obtener todo el historial
 
-      - name: Run Bash automation script (Linux/macOS)
+      # 2. Configurar permisos para scripts (solo Linux)
+      - name: Setup script permissions
         if: matrix.os == 'ubuntu-latest'
-        run: ./scripts/automation.sh
+        run: |
+          if [ -f "./scripts/automation.sh" ]; then
+            chmod +x ./scripts/automation.sh
+            echo "✅ Permisos establecidos para automation.sh"
+          else
+            echo "⚠️  Archivo automation.sh no encontrado"
+            ls -la scripts/ || echo "No existe carpeta scripts"
+          fi
 
+      # 3. Ejecutar script en Linux
+      - name: Run Bash automation script (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          echo "🔄 Ejecutando script Bash en ${{ matrix.os }}"
+          echo "Directorio: $(pwd)"
+          echo "Contenido de scripts/:"
+          ls -la scripts/ || echo "No se pudo listar scripts/"
+          
+          if [ -f "./scripts/automation.sh" ]; then
+            ./scripts/automation.sh
+          else
+            echo "❌ ERROR: automation.sh no encontrado"
+            exit 1
+          fi
+
+      # 4. Ejecutar script en Windows
       - name: Run PowerShell automation script (Windows)
         if: matrix.os == 'windows-latest'
-        run: pwsh ./scripts/automation.ps1
+        run: |
+          Write-Host "🔄 Ejecutando script PowerShell en ${{ matrix.os }}" -ForegroundColor Cyan
+          Write-Host "Directorio: $(Get-Location)"
+          Write-Host "Contenido de scripts/:" -ForegroundColor Yellow
+          Get-ChildItem scripts/ -ErrorAction SilentlyContinue || Write-Host "No se pudo listar scripts/"
+          
+          if (Test-Path "./scripts/automation.ps1") {
+            Write-Host "✅ Encontrado automation.ps1" -ForegroundColor Green
+            powershell -ExecutionPolicy Bypass -File "./scripts/automation.ps1"
+          } else {
+            Write-Host "❌ ERROR: automation.ps1 no encontrado" -ForegroundColor Red
+            exit 1
+          }
 
+      # 5. Subir artefactos si existen
       - name: Upload automation artifacts
+        if: always()  # Ejecutar incluso si falla
         uses: actions/upload-artifact@v4
         with:
           name: system-automation-output-${{ matrix.os }}
           path: output/
+          retention-days: 7
